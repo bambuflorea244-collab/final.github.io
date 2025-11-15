@@ -1,5 +1,11 @@
+import { requireAuth } from "../../_utils";
+
 export async function onRequestGet(context) {
-  const { env } = context;
+  const { env, request } = context;
+
+  const auth = await requireAuth(env, request);
+  if (!auth.ok) return auth.response;
+
   try {
     const { results } = await env.DB.prepare(
       "SELECT id, title, created_at FROM chats ORDER BY created_at DESC"
@@ -12,7 +18,11 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
-  const { env } = context;
+  const { env, request } = context;
+
+  const auth = await requireAuth(env, request);
+  if (!auth.ok) return auth.response;
+
   try {
     const id = crypto.randomUUID();
     const title = "Untitled chat";
