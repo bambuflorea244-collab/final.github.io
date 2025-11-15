@@ -1,41 +1,57 @@
-import { requireAuth, getSetting, getAttachmentsMeta, arrayBufferToBase64 } from "../../../_utils";
+// functions/api/chats/[id]/messages.js
+import {
+  requireAuth,
+  getSetting,
+  getAttachmentsMeta,
+  arrayBufferToBase64
+} from "../../../_utils";
 
 const MODEL = "gemini-2.5-flash";
 
 async function getMessages(env, chatId, limit = 40) {
   const { results } = await env.DB.prepare(
     "SELECT role, content, created_at FROM messages WHERE chat_id=? " +
-    "ORDER BY created_at ASC LIMIT ?"
-  ).bind(chatId, limit).all();
+      "ORDER BY created_at ASC LIMIT ?"
+  )
+    .bind(chatId, limit)
+    .all();
   return results || [];
 }
 
 async function storeMessage(env, chatId, role, content) {
   await env.DB.prepare(
     "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)"
-  ).bind(chatId, role, content).run();
+  )
+    .bind(chatId, role, content)
+    .run();
 }
 
-// read up to 3 image attachments for this chat and prepare inlineData
 async function buildAttachmentParts(env, chatId) {
   const attachments = await getAttachmentsMeta(env, chatId);
-  const images = attachments.filter((a) => a.mime_type.startsWith("image/")).slice(0, 3);
-
   const parts = [];
+
+  // up to 3 images as inlineData
+  const images = attachments
+    .filter((a) => a.mime_type.startsWith("image/"))
+    .slice(0, 3);
 
   for (const img of images) {
     try {
       const object = await env.FILES.get(img.r2_key);
       if (!object) continue;
-
       const buffer = await object.arrayBuffer();
       const base64 = arrayBufferToBase64(buffer);
 
       parts.push({
         role: "user",
         parts: [
-          { text: `Reference image: ${img.name}` },
-          { inlineData: { mimeType: img.mime_type, data: base64 } }
+          { text: `Attached image: ${img.name}` },
+          {
+            inlineData: {
+              mimeType: img.mime_type,
+              data: base64
+            }
+          }
         ]
       });
     } catch (err) {
@@ -43,10 +59,12 @@ async function buildAttachmentParts(env, chatId) {
     }
   }
 
-  // for non-image attachments, just include a textual description
-  const other = attachments.filter((a) => !a.mime_type.startsWith("image/")).slice(0, 5);
-  if (other.length) {
-    const desc = other
+  // summary of non-image files
+  const others = attachments.filter(
+    (a) => !a.mime_type.startsWith("image/")
+  );
+  if (others.length) {
+    const desc = others
       .map((a) => `${a.name} (${a.mime_type})`)
       .join(", ");
     parts.push({
@@ -54,7 +72,7 @@ async function buildAttachmentParts(env, chatId) {
       parts: [
         {
           text:
-            "Additional attached files for this chat (consider their content if relevant): " +
+            "Additional attached files for this chat (use if relevant): " +
             desc
         }
       ]
@@ -74,7 +92,9 @@ export async function onRequestGet(context) {
   try {
     const chat = await env.DB.prepare(
       "SELECT id FROM chats WHERE id=?"
-    ).bind(chatId).first();
+    )
+      .bind(chatId)
+      .first();
     if (!chat) {
       return new Response("Chat not found", { status: 404 });
     }
@@ -97,7 +117,9 @@ export async function onRequestPost(context) {
   try {
     const chat = await env.DB.prepare(
       "SELECT id FROM chats WHERE id=?"
-    ).bind(chatId).first();
+    )
+      .bind(chatId)
+      .first();
     if (!chat) {
       return new Response("Chat not found", { status: 404 });
     }
@@ -115,7 +137,6 @@ export async function onRequestPost(context) {
       parts: [{ text: m.content }]
     }));
 
-    // add attachments as context (images + file list)
     const attachmentParts = await buildAttachmentParts(env, chatId);
     contents.push(...attachmentParts);
 
