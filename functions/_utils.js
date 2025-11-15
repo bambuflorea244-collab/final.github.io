@@ -1,4 +1,5 @@
-// Shared helpers for auth and settings and attachments
+// functions/_utils.js
+// Shared helpers for auth, settings, and attachments
 
 export async function requireAuth(env, request) {
   const auth = request.headers.get("Authorization") || "";
@@ -35,16 +36,15 @@ export async function setSetting(env, key, value) {
     .run();
 }
 
-// ---- attachments helpers ----
-
+// Attachments metadata
 export async function getAttachmentsMeta(env, chatId) {
   const { results } = await env.DB.prepare(
-    "SELECT id, name, mime_type, r2_key, created_at FROM attachments WHERE chat_id=? ORDER BY created_at ASC"
+    "SELECT id, chat_id, name, mime_type, r2_key, created_at FROM attachments WHERE chat_id=? ORDER BY created_at ASC"
   ).bind(chatId).all();
   return results || [];
 }
 
-// convert ArrayBuffer -> base64 (for inline image data)
+// ArrayBuffer -> base64 for inlineData
 export function arrayBufferToBase64(buffer) {
   let binary = "";
   const bytes = new Uint8Array(buffer);
