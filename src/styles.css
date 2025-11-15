@@ -3,9 +3,9 @@
   --bg: #050304;
   --bg-elevated: #0d0507;
   --border-subtle: #2a1517;
-  --accent: #ff7b00;           /* orange neon */
-  --accent-strong: #ff0033;    /* hot red */
-  --accent-gold: #ffd700;      /* gold glow */
+  --accent: #ff7b00;
+  --accent-strong: #ff0033;
+  --accent-gold: #ffd700;
   --text: #fdf2f4;
   --text-soft: #b68488;
   --danger: #ff4267;
@@ -26,16 +26,11 @@ body {
     Segoe UI, Roboto, sans-serif;
   background: radial-gradient(circle at top, #1b090d 0, #050304 60%);
   color: var(--text);
-}
-
-body {
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
+  overflow: hidden;
 }
 
 #root {
-  flex: 1;
+  height: 100vh;
   display: flex;
 }
 
@@ -46,6 +41,7 @@ body {
   display: grid;
   grid-template-columns: 260px 1fr;
   min-height: 100vh;
+  max-height: 100vh;
   backdrop-filter: blur(18px);
 }
 
@@ -58,6 +54,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -177,11 +174,17 @@ body {
 
 .chat-list {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding-right: 4px;
+  margin-top: 8px;
+}
+
+.chat-row {
+  display: flex;
+  gap: 4px;
 }
 
 .chat-item {
@@ -192,7 +195,7 @@ body {
   font-size: 13px;
   padding: 8px 10px;
   display: flex;
-  width: 100%;
+  flex: 1;
   align-items: center;
   gap: 8px;
   cursor: pointer;
@@ -215,11 +218,29 @@ body {
   box-shadow: 0 0 16px rgba(255, 120, 0, 0.5);
 }
 
-.chat-item:hover:not(.active)) {
+.chat-item:hover:not(.active) {
   background: #140506;
 }
 
-/* Sidebar footer */
+.chat-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-empty {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.delete-chat-btn {
+  border-radius: 999px;
+  padding: 4px 6px;
+  align-self: center;
+}
+
+/* Sidebar footer (unused now but kept) */
 
 .sidebar-footer {
   border-top: 1px dashed var(--border-subtle);
@@ -231,21 +252,13 @@ body {
   gap: 6px;
 }
 
-.key-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px dashed rgba(255, 215, 0, 0.6);
-}
-
 /* Main */
 
 .main {
   display: flex;
   flex-direction: column;
   background: radial-gradient(circle at top right, #290910 0, #050304 55%);
+  max-height: 100vh;
 }
 
 .main-header {
@@ -322,6 +335,11 @@ body {
   border: 1px solid #7c1824;
 }
 
+.bubble-meta {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 /* Composer */
 
 .composer {
@@ -335,6 +353,38 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.attachments-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.attachment-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 123, 0, 0.8);
+  background: #140506;
+  font-size: 11px;
+}
+
+.remove-attachment {
+  background: transparent;
+  border: none;
+  color: #ff7373;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.remove-attachment:hover {
+  color: #ff0000;
 }
 
 .composer-row {
@@ -358,20 +408,6 @@ body {
   outline: none;
   border-color: rgba(255, 123, 0, 0.9);
   box-shadow: 0 0 0 1px rgba(255, 123, 0, 0.5);
-}
-
-.composer-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  color: var(--text-soft);
-}
-
-.badge {
-  padding: 3px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 123, 0, 0.6);
 }
 
 /* Loading dots */
@@ -468,12 +504,6 @@ body {
   margin-top: 6px;
 }
 
-/* Badges on header */
-
-.settings-button {
-  font-size: 12px;
-}
-
 /* Auth lock screen */
 
 .lock-screen {
@@ -496,6 +526,17 @@ body {
   box-shadow:
     0 0 26px rgba(255, 123, 0, 0.8),
     0 0 60px rgba(0, 0, 0, 0.9);
+}
+
+/* Error banner */
+
+.error-banner {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 66, 103, 0.6);
+  background: rgba(80, 8, 26, 0.8);
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 
 /* Responsive */
