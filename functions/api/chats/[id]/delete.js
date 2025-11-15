@@ -1,3 +1,4 @@
+// functions/api/chats/[id]/delete.js
 import { requireAuth, getAttachmentsMeta } from "../../../_utils";
 
 export async function onRequestPost(context) {
@@ -16,7 +17,7 @@ export async function onRequestPost(context) {
       return new Response("Chat not found", { status: 404 });
     }
 
-    // get attachments and delete from R2
+    // delete files from R2
     const attachments = await getAttachmentsMeta(env, chatId);
     for (const a of attachments) {
       try {
@@ -26,7 +27,7 @@ export async function onRequestPost(context) {
       }
     }
 
-    // delete rows in DB
+    // delete rows from DB (attachments/messages cascade)
     await env.DB.prepare(
       "DELETE FROM messages WHERE chat_id=?"
     ).bind(chatId).run();
