@@ -1,24 +1,26 @@
-const MODEL = "gemini-2.5-flash"; // change here if you want another model
+import { requireAuth, getSetting } from "../../../_utils";
+
+const MODEL = "gemini-2.5-flash";
 
 async function getMessages(env, chatId, limit = 40) {
   const { results } = await env.DB.prepare(
-    "SELECT role, content, created_at FROM messages WHERE chat_id=? ORDER BY created_at ASC LIMIT ?"
-  )
-    .bind(chatId, limit)
-    .all();
+    "SELECT role, content, created_at FROM messages WHERE chat_id=? " +
+    "ORDER BY created_at ASC LIMIT ?"
+  ).bind(chatId, limit).all();
   return results || [];
 }
 
 async function storeMessage(env, chatId, role, content) {
   await env.DB.prepare(
     "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)"
-  )
-    .bind(chatId, role, content)
-    .run();
+  ).bind(chatId, role, content).run();
 }
 
 export async function onRequestGet(context) {
-  const { env, params } = context;
+  const { env, request, params } = context;
+  const auth = await requireAuth(env, request);
+  if (!auth.ok) return auth.response;
+
   const chatId = params.id;
 
   try {
@@ -38,7 +40,10 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
-  const { env, params, request } = context;
+  const { env, request, params } = context;
+  const auth = await requireAuth(env, request);
+  if (!auth.ok) return auth.response;
+
   const chatId = params.id;
 
   try {
@@ -59,22 +64,26 @@ export async function onRequestPost(context) {
 
     const history = await getMessages(env, chatId, 40);
 
-    // Build Gemini contents[] from history
     const contents = history.map((m) => ({
       role: m.role === "model" ? "model" : "user",
       parts: [{ text: m.content }]
     }));
 
-    // Add latest user message explicitly (it is already in DB but we want to be sure it's included)
     contents.push({
       role: "user",
       parts: [{ text: message }]
     });
 
-    const body = {
-      model: MODEL,
-      contents
-    };
+    // Get Gemini API key from settings
+    const apiKey = await getSetting(env, "gemini_api_key");
+    if (!apiKey) {
+      return new Response(
+        "Gemini API key not set. Go to Settings and save it first.",
+        { status: 500 }
+      );
+    }
+
+    const body = { model: MODEL, contents };
 
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
@@ -82,7 +91,7 @@ export async function onRequestPost(context) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY
+          "x-goog-api-key": apiKey
         },
         body: JSON.stringify(body)
       }
@@ -96,10 +105,10 @@ export async function onRequestPost(context) {
 
     const data = await r.json();
     const reply =
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") ||
-      "";
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text || "")
+        .join("\n") || "";
 
-    // store model reply
     await storeMessage(env, chatId, "model", reply);
 
     return Response.json({ reply });
