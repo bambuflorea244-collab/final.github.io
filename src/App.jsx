@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 function formatTime(ts) {
   if (!ts) return "";
@@ -13,20 +13,45 @@ async function apiFetch(path, token, options = {}) {
   return fetch(path, { ...options, headers });
 }
 
+// Build a tree from folders (supports multi-level)
+function buildFolderTree(folders) {
+  const map = new Map();
+  folders.forEach((f) => {
+    map.set(f.id, { ...f, children: [] });
+  });
+  const roots = [];
+  folders.forEach((f) => {
+    const node = map.get(f.id);
+    if (f.parent_id && map.has(f.parent_id)) {
+      map.get(f.parent_id).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
 export default function App() {
+  // ---- AUTH ----
   const [authToken, setAuthToken] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
 
+  // ---- CORE DATA ----
   const [chats, setChats] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [input, setInput] = useState("");
+
   const [loadingChats, setLoadingChats] = useState(false);
+  const [loadingFolders, setLoadingFolders] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
+  // ---- GLOBAL SETTINGS (API keys) ----
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -35,19 +60,34 @@ export default function App() {
   const [geminiInput, setGeminiInput] = useState("");
   const [pythonInput, setPythonInput] = useState("");
 
-  const [passwordInput, setPasswordInput] = useState("");
+  // ---- DELETE CHAT CONFIRM ----
   const [confirmDelete, setConfirmDelete] = useState(null);
+
+  // ---- NEW CHAT MODAL ----
+  const [newChatModalOpen, setNewChatModalOpen] = useState(false);
+  const [newChatName, setNewChatName] = useState("");
+  const [newChatFolderId, setNewChatFolderId] = useState("");
+
+  // ---- NEW FOLDER MODAL ----
+  const [newFolderModalOpen, setNewFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderParentId, setNewFolderParentId] = useState("");
+
+  // ---- PER-CHAT SETTINGS MODAL ----
+  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [chatSettings, setChatSettings] = useState(null);
+  const [chatSettingsSaving, setChatSettingsSaving] = useState(false);
 
   const fileInputRef = useRef(null);
 
-  // ---- AUTH ----
+  // ---------- AUTH FLOW ----------
+
   useEffect(() => {
     const stored = window.localStorage.getItem("authToken");
     if (!stored) {
       setAuthChecking(false);
       return;
     }
-
     (async () => {
       try {
         const r = await apiFetch("/api/auth/check", stored);
@@ -91,7 +131,24 @@ export default function App() {
     }
   }
 
-  // ---- CHATS / MESSAGES / ATTACHMENTS ----
+  // ---------- DATA FETCHING ----------
+
+  async function fetchFolders() {
+    if (!authToken) return;
+    try {
+      setLoadingFolders(true);
+      const res = await apiFetch("/api/folders", authToken);
+      if (!res.ok) throw new Error("Failed to load folders");
+      const data = await res.json();
+      setFolders(data);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load folders.");
+    } finally {
+      setLoadingFolders(false);
+    }
+  }
+
   async function fetchChats() {
     if (!authToken) return;
     try {
@@ -108,28 +165,9 @@ export default function App() {
     }
   }
 
-  async function createChat() {
-    if (!authToken) return;
-    setError("");
-
-    try {
-      const res = await apiFetch("/api/chats", authToken, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to create chat");
-      const data = await res.json();
-      await fetchChats();
-      setActiveChatId(data.id);
-      await loadMessages(data.id);
-      await loadAttachments(data.id);
-    } catch (err) {
-      console.error(err);
-      setError("Could not create chat.");
-    }
-  }
-
   async function loadMessages(chatId) {
     if (!authToken) return;
     setError("");
-
     try {
       const res = await apiFetch(`/api/chats/${chatId}/messages`, authToken);
       if (!res.ok) throw new Error("Failed to load messages");
@@ -144,7 +182,6 @@ export default function App() {
   async function loadAttachments(chatId) {
     if (!authToken) return;
     setError("");
-
     try {
       const res = await apiFetch(
         `/api/chats/${chatId}/attachments`,
@@ -156,6 +193,109 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setError("Could not load attachments.");
+    }
+  }
+
+  // After auth, load folders & chats
+  useEffect(() => {
+    if (!authToken) return;
+    fetchFolders();
+    fetchChats();
+  }, [authToken]);
+
+  // When activeChatId changes, load its data
+  useEffect(() => {
+    if (!activeChatId || !authToken) return;
+    loadMessages(activeChatId);
+    loadAttachments(activeChatId);
+  }, [activeChatId, authToken]);
+
+  // ---------- CHAT ACTIONS ----------
+
+  function openNewChatModal() {
+    setNewChatName("");
+    setNewChatFolderId("");
+    setNewChatModalOpen(true);
+  }
+
+  async function submitNewChat(e) {
+    e.preventDefault();
+    if (!authToken) return;
+    setError("");
+    try {
+      const res = await apiFetch("/api/chats", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newChatName || "Untitled chat",
+          folderId: newChatFolderId || null
+        })
+      });
+      if (!res.ok) throw new Error("Failed to create chat");
+      const data = await res.json();
+      setNewChatModalOpen(false);
+      await fetchChats();
+      setActiveChatId(data.id);
+      await loadMessages(data.id);
+      await loadAttachments(data.id);
+    } catch (err) {
+      console.error(err);
+      setError("Could not create chat.");
+    }
+  }
+
+  function openNewFolderModal() {
+    setNewFolderName("");
+    setNewFolderParentId("");
+    setNewFolderModalOpen(true);
+  }
+
+  async function submitNewFolder(e) {
+    e.preventDefault();
+    if (!authToken) return;
+    setError("");
+    try {
+      const res = await apiFetch("/api/folders", authToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newFolderName || "New folder",
+          parentId: newFolderParentId || null
+        })
+      });
+      if (!res.ok) throw new Error("Failed to create folder");
+      await fetchFolders();
+      setNewFolderModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      setError("Could not create folder.");
+    }
+  }
+
+  async function deleteChat(chatId) {
+    if (!authToken) return;
+    setError("");
+    try {
+      const res = await apiFetch(
+        `/api/chats/${chatId}/delete`,
+        authToken,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Failed to delete chat");
+      }
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+        setMessages([]);
+        setAttachments([]);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Could not delete chat fully.");
+    } finally {
+      setConfirmDelete(null);
     }
   }
 
@@ -213,7 +353,6 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file || !authToken || !activeChatId) return;
     setError("");
-
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -221,10 +360,7 @@ export default function App() {
       const res = await apiFetch(
         `/api/chats/${activeChatId}/attachments`,
         authToken,
-        {
-          method: "POST",
-          body: formData
-        }
+        { method: "POST", body: formData }
       );
       if (!res.ok) {
         const txt = await res.text();
@@ -240,46 +376,8 @@ export default function App() {
     }
   }
 
-  async function deleteChat(chatId) {
-    if (!authToken) return;
-    setError("");
+  // ---------- GLOBAL SETTINGS ----------
 
-    try {
-      const res = await apiFetch(
-        `/api/chats/${chatId}/delete`,
-        authToken,
-        { method: "POST" }
-      );
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || "Failed to delete chat");
-      }
-      setChats((prev) => prev.filter((c) => c.id !== chatId));
-      if (activeChatId === chatId) {
-        setActiveChatId(null);
-        setMessages([]);
-        setAttachments([]);
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Could not delete chat fully.");
-    } finally {
-      setConfirmDelete(null);
-    }
-  }
-
-  useEffect(() => {
-    if (!authToken) return;
-    fetchChats();
-  }, [authToken]);
-
-  useEffect(() => {
-    if (!activeChatId || !authToken) return;
-    loadMessages(activeChatId);
-    loadAttachments(activeChatId);
-  }, [activeChatId, authToken]);
-
-  // ---- SETTINGS ----
   async function openSettings() {
     if (!authToken) return;
     setSettingsOpen(true);
@@ -333,7 +431,141 @@ export default function App() {
     }
   }
 
-  // ---- RENDER ----
+  // ---------- PER-CHAT SETTINGS MODAL ----------
+
+  async function openChatSettings(chatId) {
+    if (!authToken || !chatId) return;
+    setChatSettingsOpen(true);
+    setChatSettings(null);
+    setChatSettingsSaving(false);
+    setError("");
+    try {
+      const res = await apiFetch(
+        `/api/chats/${chatId}/settings`,
+        authToken
+      );
+      if (!res.ok) throw new Error("Failed to load chat settings");
+      const data = await res.json();
+      setChatSettings(data);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load chat settings.");
+    }
+  }
+
+  async function saveChatSettings(e) {
+    e.preventDefault();
+    if (!authToken || !chatSettings || !chatSettings.id) return;
+    setChatSettingsSaving(true);
+    setError("");
+    try {
+      const payload = {
+        title: chatSettings.title,
+        folderId: chatSettings.folder_id || null,
+        systemPrompt: chatSettings.system_prompt || ""
+      };
+
+      const res = await apiFetch(
+        `/api/chats/${chatSettings.id}/settings`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }
+      );
+      if (!res.ok) throw new Error("Failed to save chat settings");
+      const data = await res.json();
+      setChatSettings(data);
+      await fetchChats();
+      setChatSettingsOpen(false);
+    } catch (err) {
+      console.error(err);
+      setError("Could not save chat settings.");
+    } finally {
+      setChatSettingsSaving(false);
+    }
+  }
+
+  async function regenerateChatApiKey() {
+    if (!authToken || !chatSettings || !chatSettings.id) return;
+    setChatSettingsSaving(true);
+    setError("");
+    try {
+      const res = await apiFetch(
+        `/api/chats/${chatSettings.id}/settings`,
+        authToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ regenerateApiKey: true })
+        }
+      );
+      if (!res.ok) throw new Error("Failed to regenerate API key");
+      const data = await res.json();
+      setChatSettings(data);
+    } catch (err) {
+      console.error(err);
+      setError("Could not regenerate API key.");
+    } finally {
+      setChatSettingsSaving(false);
+    }
+  }
+
+  // ---------- HELPERS FOR RENDER ----------
+
+  // group chats by folder_id
+  const chatsByFolder = {};
+  chats.forEach((c) => {
+    const key = c.folder_id || "root";
+    if (!chatsByFolder[key]) chatsByFolder[key] = [];
+    chatsByFolder[key].push(c);
+  });
+
+  const folderTree = buildFolderTree(folders);
+
+  function renderChatRow(chat) {
+    return (
+      <div key={chat.id} className="chat-row">
+        <button
+          className={
+            "chat-item" + (chat.id === activeChatId ? " active" : "")
+          }
+          onClick={() => setActiveChatId(chat.id)}
+        >
+          <span className="icon">🔥</span>
+          <span className="chat-title">
+            {chat.title || `Chat ${chat.id.slice(0, 6)}`}
+          </span>
+        </button>
+        <button
+          className="btn btn-sm delete-chat-btn"
+          onClick={() => setConfirmDelete(chat.id)}
+          title="Delete chat"
+        >
+          🗑
+        </button>
+      </div>
+    );
+  }
+
+  function renderFolderNode(node, depth = 0) {
+    return (
+      <div key={node.id}>
+        <div
+          className="folder-row"
+          style={{ paddingLeft: 4 + depth * 12, marginTop: 4 }}
+        >
+          <span style={{ marginRight: 6 }}>📁</span>
+          <span style={{ fontSize: 12 }}>{node.name}</span>
+        </div>
+        {(chatsByFolder[node.id] || []).map((chat) => renderChatRow(chat))}
+        {node.children.map((child) => renderFolderNode(child, depth + 1))}
+      </div>
+    );
+  }
+
+  // ---------- RENDER ----------
 
   if (authChecking) {
     return (
@@ -393,39 +625,35 @@ export default function App() {
             <span className="chip">Owner only</span>
           </div>
 
-          <button className="btn btn-primary" onClick={createChat}>
-            <span>＋</span> New chat
-          </button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn btn-primary" onClick={openNewChatModal}>
+              <span>＋</span> New chat
+            </button>
+            <button className="btn btn-sm" onClick={openNewFolderModal}>
+              📁 New folder
+            </button>
+          </div>
 
           <div className="chat-list">
+            {loadingFolders && <div>Loading folders…</div>}
             {loadingChats && <div>Loading chats…</div>}
-            {!loadingChats && chats.length === 0 && (
-              <div className="chat-empty">
-                No chats yet. Create your first conversation.
-              </div>
-            )}
-            {chats.map((c) => (
-              <div key={c.id} className="chat-row">
-                <button
-                  className={
-                    "chat-item" + (c.id === activeChatId ? " active" : "")
-                  }
-                  onClick={() => setActiveChatId(c.id)}
-                >
-                  <span className="icon">🔥</span>
-                  <span className="chat-title">
-                    {c.title || `Chat ${c.id.slice(0, 6)}`}
+
+            {/* Chats without folder */}
+            {(chatsByFolder["root"] || []).length > 0 && (
+              <>
+                <div className="folder-row" style={{ marginTop: 4 }}>
+                  <span style={{ fontSize: 12, color: "#b68488" }}>
+                    (No folder)
                   </span>
-                </button>
-                <button
-                  className="btn btn-sm delete-chat-btn"
-                  onClick={() => setConfirmDelete(c.id)}
-                  title="Delete chat"
-                >
-                  🗑
-                </button>
-              </div>
-            ))}
+                </div>
+                {(chatsByFolder["root"] || []).map((chat) =>
+                  renderChatRow(chat)
+                )}
+              </>
+            )}
+
+            {/* Folder tree */}
+            {folderTree.map((node) => renderFolderNode(node))}
           </div>
         </aside>
 
@@ -443,11 +671,19 @@ export default function App() {
               </div>
             </div>
             <div className="main-header-meta">
+              {activeChatId && (
+                <button
+                  className="btn btn-sm"
+                  onClick={() => openChatSettings(activeChatId)}
+                >
+                  🧩 Chat settings
+                </button>
+              )}
               <button
                 className="btn btn-sm settings-button"
                 onClick={openSettings}
               >
-                ⚙ Settings
+                ⚙ Global settings
               </button>
               <span>Model: gemini-2.5-flash</span>
               {sending && (
@@ -473,7 +709,10 @@ export default function App() {
                   <div style={{ marginBottom: 8 }}>
                     This space is only for you.
                   </div>
-                  <button className="btn btn-primary" onClick={createChat}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={openNewChatModal}
+                  >
                     Start a new chat
                   </button>
                 </div>
@@ -559,11 +798,11 @@ export default function App() {
         </main>
       </div>
 
-      {/* SETTINGS MODAL */}
+      {/* GLOBAL SETTINGS MODAL */}
       {settingsOpen && (
         <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title">Settings</div>
+            <div className="modal-title">Global settings</div>
             <div className="modal-subtitle">
               Paste your API keys once. They’re stored server-side and hidden
               afterwards.
@@ -617,7 +856,246 @@ export default function App() {
         </div>
       )}
 
-      {/* CONFIRM DELETE MODAL */}
+      {/* NEW CHAT MODAL */}
+      {newChatModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setNewChatModalOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">New chat</div>
+            <div className="modal-subtitle">
+              Name your chat and choose a folder (optional).
+            </div>
+            <form onSubmit={submitNewChat}>
+              <div className="modal-field">
+                <label>Chat name</label>
+                <input
+                  value={newChatName}
+                  onChange={(e) => setNewChatName(e.target.value)}
+                  placeholder="e.g. Product research agent"
+                />
+              </div>
+              <div className="modal-field">
+                <label>Folder</label>
+                <select
+                  value={newChatFolderId}
+                  onChange={(e) => setNewChatFolderId(e.target.value)}
+                >
+                  <option value="">(No folder)</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setNewChatModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* NEW FOLDER MODAL */}
+      {newFolderModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setNewFolderModalOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">New folder</div>
+            <div className="modal-subtitle">
+              Folders can contain chats and other folders.
+            </div>
+            <form onSubmit={submitNewFolder}>
+              <div className="modal-field">
+                <label>Folder name</label>
+                <input
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="e.g. Work / Personal"
+                />
+              </div>
+              <div className="modal-field">
+                <label>Parent folder</label>
+                <select
+                  value={newFolderParentId}
+                  onChange={(e) => setNewFolderParentId(e.target.value)}
+                >
+                  <option value="">(Top level)</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setNewFolderModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CHAT SETTINGS MODAL */}
+      {chatSettingsOpen && chatSettings && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setChatSettingsOpen(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Chat settings</div>
+            <div className="modal-subtitle">
+              Configure this chat’s name, folder, system prompt, and external
+              API.
+            </div>
+            <form onSubmit={saveChatSettings}>
+              <div className="modal-field">
+                <label>Chat name</label>
+                <input
+                  value={chatSettings.title || ""}
+                  onChange={(e) =>
+                    setChatSettings((prev) => ({
+                      ...prev,
+                      title: e.target.value
+                    }))
+                  }
+                />
+              </div>
+              <div className="modal-field">
+                <label>Folder</label>
+                <select
+                  value={chatSettings.folder_id || ""}
+                  onChange={(e) =>
+                    setChatSettings((prev) => ({
+                      ...prev,
+                      folder_id: e.target.value || null
+                    }))
+                  }
+                >
+                  <option value="">(No folder)</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="modal-field">
+                <label>System prompt (optional)</label>
+                <textarea
+                  rows={3}
+                  style={{ resize: "vertical" }}
+                  value={chatSettings.system_prompt || ""}
+                  onChange={(e) =>
+                    setChatSettings((prev) => ({
+                      ...prev,
+                      system_prompt: e.target.value
+                    }))
+                  }
+                  placeholder="e.g. You are my senior Python assistant…"
+                />
+              </div>
+
+              <div className="modal-field">
+                <label>External API key (per chat)</label>
+                <input
+                  readOnly
+                  value={chatSettings.api_key || ""}
+                  style={{ fontFamily: "monospace", fontSize: 11 }}
+                />
+                <div style={{ fontSize: 11, color: "#b68488" }}>
+                  Use this with <code>/api/chats/{chatSettings.id}/external</code>{" "}
+                  from PythonAnywhere.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ marginTop: 6 }}
+                  onClick={regenerateChatApiKey}
+                  disabled={chatSettingsSaving}
+                >
+                  🔁 Regenerate key
+                </button>
+              </div>
+
+              <div className="modal-field">
+                <label>PythonAnywhere example</label>
+                <pre
+                  style={{
+                    background: "#050204",
+                    borderRadius: 10,
+                    padding: 8,
+                    fontSize: 11,
+                    whiteSpace: "pre-wrap"
+                  }}
+                >
+{`import requests, base64
+
+CHAT_ID = "${chatSettings.id}"
+API_KEY = "${chatSettings.api_key || "YOUR_KEY"}"
+URL = "https://YOUR_DOMAIN/api/chats/" + CHAT_ID + "/external"
+
+payload = {
+    "message": "Hello from PythonAnywhere!",
+    "attachments": []
+}
+
+resp = requests.post(
+    URL,
+    headers={
+        "X-CHAT-API-KEY": API_KEY,
+        "Content-Type": "application/json",
+    },
+    json=payload,
+)
+print(resp.json()["reply"])`}
+                </pre>
+              </div>
+
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setChatSettingsOpen(false)}
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={chatSettingsSaving}
+                >
+                  {chatSettingsSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CHAT MODAL */}
       {confirmDelete && (
         <div
           className="modal-backdrop"
