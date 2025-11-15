@@ -1,3 +1,4 @@
+// functions/api/auth/check.js
 import { requireAuth } from "../../_utils";
 
 export async function onRequestGet(context) {
