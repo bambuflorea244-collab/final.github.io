@@ -1,4 +1,5 @@
-import { requireAuth, getAttachmentsMeta, arrayBufferToBase64 } from "../../../_utils";
+// functions/api/chats/[id]/attachments.js
+import { requireAuth, getAttachmentsMeta } from "../../../_utils";
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
 
@@ -64,12 +65,12 @@ export async function onRequestPost(context) {
       "INSERT INTO attachments (chat_id, name, mime_type, r2_key) VALUES (?, ?, ?, ?)"
     ).bind(chatId, name, mime, key).run();
 
-    const { lastRowId } = await env.DB.prepare(
+    const row = await env.DB.prepare(
       "SELECT last_insert_rowid() AS id"
     ).first();
 
     return Response.json({
-      id: lastRowId,
+      id: row.id,
       chat_id: chatId,
       name,
       mime_type: mime,
