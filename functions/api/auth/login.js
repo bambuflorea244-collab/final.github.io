@@ -1,4 +1,5 @@
-import { getSetting, setSetting } from "../../_utils";
+// functions/api/auth/login.js
+import { } from "../../_utils";
 
 export async function onRequestPost(context) {
   const { env, request } = context;
@@ -18,7 +19,6 @@ export async function onRequestPost(context) {
       return new Response("Invalid password", { status: 401 });
     }
 
-    // Password correct → create session token
     const token = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO sessions (token) VALUES (?)"
