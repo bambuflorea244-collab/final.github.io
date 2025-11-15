@@ -1,11 +1,12 @@
-name = "pro-gemini-chat"
-main = "./functions/api/chats/index.js"
+name = "final-github-io"
+pages_build_output_dir = "./dist"
 compatibility_date = "2024-09-30"
 
-[env.dev]
-# Optional env for local development
+# Bind Pages Functions directory
+functions = "./functions"
 
+# D1 Database binding
 [[d1_databases]]
 binding = "DB"
-database_name = "gemini_chat"
-database_id = "YOUR_D1_DATABASE_ID"
+database_name = "private_ai_db"
+database_id = "YOUR-D1-ID"
