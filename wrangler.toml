@@ -1,12 +1,12 @@
 name = "final-github-io"
-pages_build_output_dir = "./dist"
+pages_build_output_dir = "dist"
 compatibility_date = "2024-09-30"
 
-# Bind Pages Functions directory
+# Functions directory for API routes
 functions = "./functions"
 
-# D1 Database binding
+# D1 DATABASE BINDING
 [[d1_databases]]
-binding = "DB"
-database_name = "private_ai_db"
-database_id = "YOUR-D1-ID"
+binding = "private_ai_db"        # MUST match Cloudflare binding name
+database_name = "private_ai_db"  # The D1 database name
+database_id = "cc4168f0-9c14-4b03-826b-30ff8f0a660c"   # <-- your REAL ID
