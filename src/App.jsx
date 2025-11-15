@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useEffect, useState, useRef } from "react";
 
 function formatTime(ts) {
@@ -35,12 +36,11 @@ export default function App() {
   const [pythonInput, setPythonInput] = useState("");
 
   const [passwordInput, setPasswordInput] = useState("");
-
   const [confirmDelete, setConfirmDelete] = useState(null);
+
   const fileInputRef = useRef(null);
 
   // ---- AUTH ----
-
   useEffect(() => {
     const stored = window.localStorage.getItem("authToken");
     if (!stored) {
@@ -91,8 +91,7 @@ export default function App() {
     }
   }
 
-  // ---- API: chats, messages, attachments ----
-
+  // ---- CHATS / MESSAGES / ATTACHMENTS ----
   async function fetchChats() {
     if (!authToken) return;
     try {
@@ -103,15 +102,15 @@ export default function App() {
       setChats(data);
     } catch (err) {
       console.error(err);
-      setError("Could not load chats. Check D1 binding & schema.");
+      setError("Could not load chats.");
     } finally {
       setLoadingChats(false);
     }
   }
 
   async function createChat() {
-    setError("");
     if (!authToken) return;
+    setError("");
 
     try {
       const res = await apiFetch("/api/chats", authToken, { method: "POST" });
@@ -128,8 +127,8 @@ export default function App() {
   }
 
   async function loadMessages(chatId) {
-    setError("");
     if (!authToken) return;
+    setError("");
 
     try {
       const res = await apiFetch(`/api/chats/${chatId}/messages`, authToken);
@@ -138,13 +137,13 @@ export default function App() {
       setMessages(data);
     } catch (err) {
       console.error(err);
-      setError("Could not load messages for this chat.");
+      setError("Could not load messages.");
     }
   }
 
   async function loadAttachments(chatId) {
-    setError("");
     if (!authToken) return;
+    setError("");
 
     try {
       const res = await apiFetch(
@@ -156,7 +155,7 @@ export default function App() {
       setAttachments(data);
     } catch (err) {
       console.error(err);
-      setError("Could not load attachments for this chat.");
+      setError("Could not load attachments.");
     }
   }
 
@@ -165,6 +164,7 @@ export default function App() {
     if (!activeChatId || !authToken) return;
     const text = input.trim();
     if (!text || sending) return;
+
     setError("");
     setSending(true);
 
@@ -280,7 +280,6 @@ export default function App() {
   }, [activeChatId, authToken]);
 
   // ---- SETTINGS ----
-
   async function openSettings() {
     if (!authToken) return;
     setSettingsOpen(true);
@@ -359,16 +358,7 @@ export default function App() {
               This console is protected. Enter your access password.
             </div>
             {authError && (
-              <div
-                style={{
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,66,103,0.7)",
-                  background: "rgba(80,8,26,0.75)",
-                  padding: "6px 8px",
-                  fontSize: 12,
-                  marginBottom: 8
-                }}
-              >
+              <div className="error-banner">
                 <strong>Error:</strong> {authError}
               </div>
             )}
@@ -410,31 +400,25 @@ export default function App() {
           <div className="chat-list">
             {loadingChats && <div>Loading chats…</div>}
             {!loadingChats && chats.length === 0 && (
-              <div style={{ fontSize: 12, color: "#b68488" }}>
+              <div className="chat-empty">
                 No chats yet. Create your first conversation.
               </div>
             )}
             {chats.map((c) => (
-              <div key={c.id} style={{ display: "flex", gap: 4 }}>
+              <div key={c.id} className="chat-row">
                 <button
                   className={
                     "chat-item" + (c.id === activeChatId ? " active" : "")
                   }
                   onClick={() => setActiveChatId(c.id)}
-                  style={{ flex: 1 }}
                 >
                   <span className="icon">🔥</span>
-                  <span style={{ flex: 1, overflow: "hidden" }}>
+                  <span className="chat-title">
                     {c.title || `Chat ${c.id.slice(0, 6)}`}
                   </span>
                 </button>
                 <button
-                  className="btn btn-sm"
-                  style={{
-                    borderRadius: 12,
-                    padding: "4px 6px",
-                    alignSelf: "center"
-                  }}
+                  className="btn btn-sm delete-chat-btn"
                   onClick={() => setConfirmDelete(c.id)}
                   title="Delete chat"
                 >
@@ -455,7 +439,7 @@ export default function App() {
                   : "Private Gemini Console"}
               </div>
               <div className="main-subtitle">
-                Each chat has its own memory and attachments.
+                Each chat keeps its own memory and attachments.
               </div>
             </div>
             <div className="main-header-meta">
@@ -478,17 +462,8 @@ export default function App() {
 
           <div className="messages">
             {error && (
-              <div
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,66,103,0.6)",
-                  background: "rgba(80,8,26,0.8)",
-                  padding: "8px 10px",
-                  fontSize: 12,
-                  marginBottom: 10
-                }}
-              >
-                <strong style={{ color: "#ffd0dd" }}>Error:</strong> {error}
+              <div className="error-banner">
+                <strong>Error:</strong> {error}
               </div>
             )}
 
@@ -527,14 +502,7 @@ export default function App() {
           <div className="composer">
             <form className="composer-inner" onSubmit={handleSend}>
               {activeChatId && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    marginBottom: 6
-                  }}
-                >
+                <div className="attachments-row">
                   <button
                     type="button"
                     className="btn btn-sm"
@@ -549,17 +517,20 @@ export default function App() {
                     onChange={handleFileChange}
                   />
                   {attachments.map((a) => (
-                    <span
-                      key={a.id}
-                      style={{
-                        fontSize: 11,
-                        padding: "3px 7px",
-                        borderRadius: 999,
-                        border: "1px solid rgba(255,123,0,0.6)",
-                        background: "#140506"
-                      }}
-                    >
+                    <span key={a.id} className="attachment-pill">
                       📎 {a.name}
+                      <button
+                        className="remove-attachment"
+                        type="button"
+                        onClick={() =>
+                          setAttachments((prev) =>
+                            prev.filter((x) => x.id !== a.id)
+                          )
+                        }
+                        aria-label="Remove attachment"
+                      >
+                        ✕
+                      </button>
                     </span>
                   ))}
                 </div>
