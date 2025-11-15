@@ -1,12 +1,5 @@
-name = "final-github-io"
-pages_build_output_dir = "dist"
+name = "pro-gemini-chat"
 compatibility_date = "2024-09-30"
 
-# Functions directory for API routes
-functions = "./functions"
-
-# D1 DATABASE BINDING
-[[d1_databases]]
-binding = "private_ai_db"        # MUST match Cloudflare binding name
-database_name = "private_ai_db"  # The D1 database name
-database_id = "cc4168f0-9c14-4b03-826b-30ff8f0a660c"   # <-- your REAL ID
+# Tell Cloudflare Pages where the built files are
+pages_build_output_dir = "dist"
