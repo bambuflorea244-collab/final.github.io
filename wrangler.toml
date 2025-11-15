@@ -1,0 +1,11 @@
+name = "pro-gemini-chat"
+main = "./functions/api/chats/index.js"
+compatibility_date = "2024-09-30"
+
+[env.dev]
+# Optional env for local development
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gemini_chat"
+database_id = "YOUR_D1_DATABASE_ID"
