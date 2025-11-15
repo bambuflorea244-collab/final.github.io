@@ -1,3 +1,4 @@
+// functions/api/settings/index.js
 import { requireAuth, getSetting, setSetting } from "../../_utils";
 
 export async function onRequestGet(context) {
@@ -9,7 +10,6 @@ export async function onRequestGet(context) {
   const geminiKey = await getSetting(env, "gemini_api_key");
   const pythonKey = await getSetting(env, "python_anywhere_key");
 
-  // Never send actual keys, only "is set" flags
   return Response.json({
     geminiApiKeySet: !!geminiKey,
     pythonAnywhereKeySet: !!pythonKey
