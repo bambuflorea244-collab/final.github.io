@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 function formatTime(ts) {
   if (!ts) return "";
@@ -20,6 +20,7 @@ export default function App() {
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [attachments, setAttachments] = useState([]);
   const [input, setInput] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
   const [sending, setSending] = useState(false);
@@ -34,6 +35,9 @@ export default function App() {
   const [pythonInput, setPythonInput] = useState("");
 
   const [passwordInput, setPasswordInput] = useState("");
+
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const fileInputRef = useRef(null);
 
   // ---- AUTH ----
 
@@ -87,7 +91,7 @@ export default function App() {
     }
   }
 
-  // ---- API: chats & messages ----
+  // ---- API: chats, messages, attachments ----
 
   async function fetchChats() {
     if (!authToken) return;
@@ -116,6 +120,7 @@ export default function App() {
       await fetchChats();
       setActiveChatId(data.id);
       await loadMessages(data.id);
+      await loadAttachments(data.id);
     } catch (err) {
       console.error(err);
       setError("Could not create chat.");
@@ -134,6 +139,24 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setError("Could not load messages for this chat.");
+    }
+  }
+
+  async function loadAttachments(chatId) {
+    setError("");
+    if (!authToken) return;
+
+    try {
+      const res = await apiFetch(
+        `/api/chats/${chatId}/attachments`,
+        authToken
+      );
+      if (!res.ok) throw new Error("Failed to load attachments");
+      const data = await res.json();
+      setAttachments(data);
+    } catch (err) {
+      console.error(err);
+      setError("Could not load attachments for this chat.");
     }
   }
 
@@ -186,6 +209,65 @@ export default function App() {
     }
   }
 
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file || !authToken || !activeChatId) return;
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await apiFetch(
+        `/api/chats/${activeChatId}/attachments`,
+        authToken,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Upload failed");
+      }
+      const data = await res.json();
+      setAttachments((prev) => [...prev, data]);
+    } catch (err) {
+      console.error(err);
+      setError("Could not upload file. Check R2 binding.");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function deleteChat(chatId) {
+    if (!authToken) return;
+    setError("");
+
+    try {
+      const res = await apiFetch(
+        `/api/chats/${chatId}/delete`,
+        authToken,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Failed to delete chat");
+      }
+      setChats((prev) => prev.filter((c) => c.id !== chatId));
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+        setMessages([]);
+        setAttachments([]);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Could not delete chat fully.");
+    } finally {
+      setConfirmDelete(null);
+    }
+  }
+
   useEffect(() => {
     if (!authToken) return;
     fetchChats();
@@ -194,6 +276,7 @@ export default function App() {
   useEffect(() => {
     if (!activeChatId || !authToken) return;
     loadMessages(activeChatId);
+    loadAttachments(activeChatId);
   }, [activeChatId, authToken]);
 
   // ---- SETTINGS ----
@@ -332,27 +415,33 @@ export default function App() {
               </div>
             )}
             {chats.map((c) => (
-              <button
-                key={c.id}
-                className={
-                  "chat-item" + (c.id === activeChatId ? " active" : "")
-                }
-                onClick={() => setActiveChatId(c.id)}
-              >
-                <span className="icon">🔥</span>
-                <span style={{ flex: 1, overflow: "hidden" }}>
-                  {c.title || `Chat ${c.id.slice(0, 6)}`}
-                </span>
-              </button>
+              <div key={c.id} style={{ display: "flex", gap: 4 }}>
+                <button
+                  className={
+                    "chat-item" + (c.id === activeChatId ? " active" : "")
+                  }
+                  onClick={() => setActiveChatId(c.id)}
+                  style={{ flex: 1 }}
+                >
+                  <span className="icon">🔥</span>
+                  <span style={{ flex: 1, overflow: "hidden" }}>
+                    {c.title || `Chat ${c.id.slice(0, 6)}`}
+                  </span>
+                </button>
+                <button
+                  className="btn btn-sm"
+                  style={{
+                    borderRadius: 12,
+                    padding: "4px 6px",
+                    alignSelf: "center"
+                  }}
+                  onClick={() => setConfirmDelete(c.id)}
+                  title="Delete chat"
+                >
+                  🗑
+                </button>
+              </div>
             ))}
-          </div>
-
-          <div className="sidebar-footer">
-            <div className="key-pill">
-              <span>🔐</span>
-              <span>API keys stored server-side in Cloudflare D1.</span>
-            </div>
-            <div>Protected externally by Cloudflare Access (email login).</div>
           </div>
         </aside>
 
@@ -366,7 +455,7 @@ export default function App() {
                   : "Private Gemini Console"}
               </div>
               <div className="main-subtitle">
-                Each chat keeps its own memory in D1. Gemini runs server-side.
+                Each chat has its own memory and attachments.
               </div>
             </div>
             <div className="main-header-meta">
@@ -407,7 +496,7 @@ export default function App() {
               <div className="empty-state">
                 <div>
                   <div style={{ marginBottom: 8 }}>
-                    This space is only for you (Cloudflare Access + password).
+                    This space is only for you.
                   </div>
                   <button className="btn btn-primary" onClick={createChat}>
                     Start a new chat
@@ -437,6 +526,44 @@ export default function App() {
 
           <div className="composer">
             <form className="composer-inner" onSubmit={handleSend}>
+              {activeChatId && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginBottom: 6
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    ➕ Attach file / image
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    style={{ display: "none" }}
+                    onChange={handleFileChange}
+                  />
+                  {attachments.map((a) => (
+                    <span
+                      key={a.id}
+                      style={{
+                        fontSize: 11,
+                        padding: "3px 7px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,123,0,0.6)",
+                        background: "#140506"
+                      }}
+                    >
+                      📎 {a.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="composer-row">
                 <textarea
                   placeholder={
@@ -455,12 +582,6 @@ export default function App() {
                 >
                   {sending ? "Sending…" : "Send"}
                 </button>
-              </div>
-              <div className="composer-footer">
-                <span className="badge">
-                  🔥 Memory: stored in D1 per chat
-                </span>
-                <span>SHIFT+ENTER for new line</span>
               </div>
             </form>
           </div>
@@ -521,6 +642,38 @@ export default function App() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE MODAL */}
+      {confirmDelete && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setConfirmDelete(null)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Delete chat?</div>
+            <div className="modal-subtitle">
+              This will remove the chat, its messages, and all attachments from
+              storage.
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={() => deleteChat(confirmDelete)}
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
